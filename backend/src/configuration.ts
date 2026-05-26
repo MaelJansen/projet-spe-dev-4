@@ -9,5 +9,9 @@ export default () => ({
         name: process.env.DB_NAME,
       },
     port: 3000,
-    jwtSecret: process.env.JWT_SECRET
+    jwtSecret: process.env.JWT_SECRET,
+    minioEndpoint: process.env.MINIO_ENDPOINT,
+    minioAccessKey: process.env.MINIO_ACCESS_KEY,
+    minioSecretKey: process.env.MINIO_SECRET_KEY,
+    minioBucketName: process.env.MINIO_BUCKET_NAME
 })

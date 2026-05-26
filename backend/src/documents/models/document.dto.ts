@@ -21,3 +21,9 @@ export class CreateTextDocDto {
     @IsUUID('4')
     parentFolderId?: string;
 }
+
+export class UploadFileDto {
+    @IsOptional()
+    @IsUUID('4')
+    parentFolderId?: string;
+}
