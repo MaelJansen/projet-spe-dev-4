@@ -14,7 +14,7 @@ import { DocumentsService } from '../services/documents.service';
 import {JwtAuthGuard} from "../../common/guards/jwt-auth-guard";
 import type {RequestWithUser} from "../../common/interfaces/active-user.interface";
 import { fileTypeFromBuffer } from 'file-type';
-import {CreateFolderDto, CreateTextDocDto, UploadFileDto} from "../models/document.dto";
+import {CreateFolderDto, CreateTextDocDto, ShareDocumentDto, UploadFileDto} from "../models/document.dto";
 import {FileInterceptor} from "@nestjs/platform-express";
 
 @UseGuards(JwtAuthGuard)
@@ -23,13 +23,13 @@ export class DocumentsController {
     constructor(private readonly documentsService: DocumentsService) {}
 
     @Get()
-    async getRootDocuments() {
-        return await this.documentsService.getDocumentsByFolder();
+    async getRootDocuments(@Req() req: RequestWithUser) {
+        return await this.documentsService.getDocumentsByFolder(req.user.id);
     }
 
     @Get('trash')
-    async getTrash() {
-        return await this.documentsService.getTrash();
+    async getTrash(@Req() req: RequestWithUser) {
+        return await this.documentsService.getTrash(req.user.id);
     }
 
     @Delete(':id')
@@ -42,8 +42,22 @@ export class DocumentsController {
     }
 
     @Get(':folderId')
-    async getFolderDocuments(@Param('folderId') folderId: string) {
-        return await this.documentsService.getDocumentsByFolder(folderId);
+    async getFolderDocuments(@Req() req: RequestWithUser, @Param('folderId') folderId: string) {
+        return await this.documentsService.getDocumentsByFolder(req.user.id, folderId);
+    }
+
+    @Post(':id/share')
+    async shareDocument(
+        @Req() req: RequestWithUser,
+        @Param('id') id: string,
+        @Body() shareDocumentDto: ShareDocumentDto
+    ) {
+        return await this.documentsService.shareDocument(req.user.id, id, shareDocumentDto);
+    }
+
+    @Post(':id/convert')
+    async convertFile(@Req() req: RequestWithUser, @Param('id') id: string) {
+        return await this.documentsService.convertFileToEditable(req.user.id, id);
     }
 
     @Post(':id/restore')
@@ -72,42 +86,64 @@ export class DocumentsController {
     }
 
     @Post('upload')
-    @UseInterceptors(
-        FileInterceptor('file', {
-            limits: {
-                fileSize: 1024 * 1024 * 10,
-            },
-            fileFilter: (req, file, callback) => {
-                if (!file.originalname.match(/\.(jpg|jpeg|png|pdf|docx|xlsx|pptx|txt)$/i)) {
-                    return callback(
-                        new BadRequestException('Forbidden extension. Only images, PDFs, and Office documents are allowed.'),
-                        false,
-                    );
-                }
-                callback(null, true);
-            },
-        }),
-    )
+    @UseInterceptors(FileInterceptor('file'))
     async uploadFile(
         @Req() req: RequestWithUser,
         @UploadedFile(
             new ParseFilePipeBuilder()
-                .addFileTypeValidator({ fileType: /(jpg|jpeg|png|pdf|docx|xlsx|pptx|txt)$/i })
-                .addMaxSizeValidator({ maxSize: 1024 * 1024 * 10 }) // 10 MB
-                .build({ errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY }),
-        ) file: Express.Multer.File,
+                .addMaxSizeValidator({
+                    maxSize: 1024 * 1024 * 10, // 10 MB
+                })
+                .build({
+                    errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY,
+                }),
+        )
+        file: Express.Multer.File,
         @Body() uploadFileDto: UploadFileDto,
     ) {
-
         if (!file) {
             throw new BadRequestException('File is required');
         }
 
-        const fileSignature = await fileTypeFromBuffer(file.buffer);
+        const allowedMimeTypes = [
+            'image/jpeg',
+            'image/png',
+            'application/pdf',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            'text/plain',
+        ];
 
-        if (!fileSignature || !fileSignature.mime.match(/(image|pdf|officedocument|text)/i)) {
-            throw new BadRequestException('Invalid File type');
+        if (!allowedMimeTypes.includes(file.mimetype)) {
+            throw new BadRequestException('Invalid file type');
         }
-        return await this.documentsService.uploadImportedFile(req.user.id, file, uploadFileDto);
+
+        if (file.mimetype !== 'text/plain') {
+            const fileSignature = await fileTypeFromBuffer(file.buffer);
+
+            if (!fileSignature) {
+                throw new BadRequestException('Invalid file signature');
+            }
+
+            const allowedSignatures = [
+                'image/jpeg',
+                'image/png',
+                'application/pdf',
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            ];
+
+            if (!allowedSignatures.includes(fileSignature.mime)) {
+                throw new BadRequestException('Invalid file signature');
+            }
+        }
+
+        return await this.documentsService.uploadImportedFile(
+            req.user.id,
+            file,
+            uploadFileDto,
+        );
     }
 }

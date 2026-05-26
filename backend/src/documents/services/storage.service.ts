@@ -1,5 +1,5 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import {S3Client, PutObjectCommand, GetObjectCommand} from '@aws-sdk/client-s3';
 import { ConfigService } from '@nestjs/config';
 
 @Injectable()
@@ -43,8 +43,13 @@ export class StorageService {
 
             return `${this.configService.get<string>('minioEndpoint')}/${this.bucketName}/${fileKey}`;
         } catch (error) {
-            console.error('ERROR REAL DE MINIO:', error);
             throw new InternalServerErrorException('Failed to upload file to Object Storage');
         }
+    }
+
+    async downloadFile(fileKey: string): Promise<any> {
+        const command = new GetObjectCommand({ Bucket: this.bucketName, Key: fileKey });
+        const response = await this.s3Client.send(command);
+        return response.Body;
     }
 }

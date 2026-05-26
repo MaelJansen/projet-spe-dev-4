@@ -1,4 +1,5 @@
-import { IsString, IsOptional, IsUUID, MinLength, MaxLength } from 'class-validator';
+import {IsString, IsOptional, IsUUID, MinLength, MaxLength, IsEnum} from 'class-validator';
+import {PermissionLevel} from "./document-share.entity";
 
 export class CreateFolderDto {
     @IsString()
@@ -26,4 +27,12 @@ export class UploadFileDto {
     @IsOptional()
     @IsUUID('4')
     parentFolderId?: string;
+}
+
+export class ShareDocumentDto {
+    @IsUUID('4')
+    targetUserId: string;
+
+    @IsEnum(PermissionLevel)
+    permission: PermissionLevel;
 }
