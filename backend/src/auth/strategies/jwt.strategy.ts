@@ -2,16 +2,13 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PassportStrategy } from '@nestjs/passport';
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { UserEntity } from '../../users/models/user.entity';
+import {UsersService} from "../../users/services/users.service";
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     constructor(
         configService: ConfigService,
-        @InjectRepository(UserEntity)
-        private usersRepository: Repository<UserEntity>,
+        private usersService: UsersService,
     ) {
         super({
             jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
@@ -21,7 +18,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     }
 
     async validate(payload: any) {
-        const user = await this.usersRepository.findOne({ where: { id: payload.sub } });
+        const user = await this.usersService.findById(payload.sub);
 
         if (!user || user.isBlocked) {
             throw new UnauthorizedException('Access denied.');
