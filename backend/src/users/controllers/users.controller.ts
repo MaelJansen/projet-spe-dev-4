@@ -4,17 +4,17 @@ import {JwtAuthGuard} from "../../common/guards/jwt-auth-guard";
 import type {RequestWithUser} from "../../common/interfaces/active-user.interface";
 import {UpdatePasswordDto, UpdateProfileDto} from "../models/user.dto";
 
+@UseGuards(JwtAuthGuard)
 @Controller('users')
 export class UsersController {
     constructor(private readonly usersService: UsersService) {}
 
-    @UseGuards(JwtAuthGuard)
     @Patch('profile')
     updateProfile(@Req() req: RequestWithUser, @Body() updateProfileDto: UpdateProfileDto) {
         return this.usersService.updateProfile(req.user.id, updateProfileDto);
     }
 
-    @UseGuards(JwtAuthGuard)
+
     @HttpCode(HttpStatus.OK)
     @Patch('password')
     async updatePassword(
