@@ -27,8 +27,8 @@ export class LoginDto {
   password: string;
 }
 
-export class RefreshTokenDto {
+export class TwoFactorCodeDto {
   @IsString()
   @IsNotEmpty()
-  refreshToken: string;
+  code: string;
 }

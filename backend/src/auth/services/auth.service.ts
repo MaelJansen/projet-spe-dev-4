@@ -1,6 +1,15 @@
-import {Injectable, UnauthorizedException, ConflictException, ForbiddenException} from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  ConflictException,
+  ForbiddenException,
+  HttpException,
+  HttpStatus
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { generateSecret, verify, generateURI } from 'otplib';
+import * as qrcode from 'qrcode';
+import {DeepPartial, Repository} from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { RegisterDto, LoginDto } from '../models/auth.dto';
@@ -80,6 +89,18 @@ export class AuthService {
       throw new UnauthorizedException('Invalid Credentials');
     }
 
+    if (user.isTwoFactorAuthenticationEnabled) {
+      const tempToken = await this.jwtService.signAsync(
+          { sub: user.id, isTemp: true },
+          { secret: this.configService.get<string>('jwtSecret'), expiresIn: '5m' }
+      );
+
+      throw new HttpException({
+        message: 'MFA_REQUIRED',
+        temp_token: tempToken
+      }, HttpStatus.ACCEPTED);
+    }
+
     const tokens = await this.generateTokens(user.id, user.email, user.role, user.name + ' ' + user.lastName);
     await this.updateRefreshTokenHash(user.id, tokens.refreshToken);
 
@@ -99,6 +120,71 @@ export class AuthService {
     const refreshTokenMatches = await bcrypt.compare(refreshToken, user.hashedRefreshToken);
     if (!refreshTokenMatches) {
       throw new ForbiddenException('Access denied');
+    }
+
+    const tokens = await this.generateTokens(user.id, user.email, user.role, user.name + ' ' + user.lastName);
+    await this.updateRefreshTokenHash(user.id, tokens.refreshToken);
+
+    return tokens;
+  }
+
+  async generateTwoFactorAuthenticationSecret(user: DeepPartial<UserEntity>) {
+
+    if (!user.email || !user.id) {
+      throw new UnauthorizedException('User not found');
+    }
+    const secret = generateSecret();
+
+    const otpAuthUrl = generateURI({
+      issuer: 'ProjetSpe4',
+      label: user.email,
+      secret
+    });
+
+    await this.usersRepository.update(user.id, {
+      twoFactorAuthenticationSecret: secret,
+    });
+
+    const qrCodeDataUrl = await qrcode.toDataURL(otpAuthUrl);
+
+    return {
+      qrCodeDataUrl
+    };
+  }
+
+  async turnOnTwoFactorAuthentication(userId: string, code: string) {
+    const user = await this.usersRepository.findOne({ where: { id: userId } });
+
+    if (!user) {
+      return 'User not found'
+    }
+
+    const result = await verify({
+      token: code,
+      secret: user.twoFactorAuthenticationSecret,
+    });
+
+    if (!result.valid) {
+      throw new UnauthorizedException('The 2FA code is incorrect');
+    }
+
+    await this.usersRepository.update(userId, {
+      isTwoFactorAuthenticationEnabled: true,
+    });
+
+  }
+
+  async loginWith2fa(userId: string, code: string) {
+    const user = await this.usersRepository.findOne({ where: { id: userId } });
+    if (!user || user.isBlocked) throw new UnauthorizedException('Access denied');
+
+    const result = await verify({
+      token: code,
+      secret: user.twoFactorAuthenticationSecret,
+    });
+
+    if (!result.valid) {
+      throw new UnauthorizedException('Incorrect 2FA code');
     }
 
     const tokens = await this.generateTokens(user.id, user.email, user.role, user.name + ' ' + user.lastName);

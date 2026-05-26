@@ -28,6 +28,12 @@ export class UserEntity {
   @Column({ type: 'varchar', nullable: true })
   hashedRefreshToken?: string | null;
 
+  @Column({ nullable: true })
+  twoFactorAuthenticationSecret: string;
+
+  @Column({ default: false })
+  isTwoFactorAuthenticationEnabled: boolean;
+
   @CreateDateColumn()
   createdAt: Date;
 }
