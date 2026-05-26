@@ -25,6 +25,9 @@ export class UserEntity {
   @Column({ default: false })
   isBlocked: boolean;
 
+  @Column({ type: 'varchar', nullable: true })
+  hashedRefreshToken?: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 }

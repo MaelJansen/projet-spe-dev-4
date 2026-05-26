@@ -5,21 +5,21 @@ import { AuthService } from "./services/auth.service";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { UserEntity } from "../users/models/user.entity";
 import { JwtModule } from '@nestjs/jwt';
-import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ConfigModule } from '@nestjs/config';
+import { JwtRefreshStrategy } from './strategies/jwt-refresh.strategy';
+import {JwtStrategy} from "./strategies/jwt.strategy";
 
 @Module({
     imports: [
         TypeOrmModule.forFeature([UserEntity]),
-        JwtModule.registerAsync({
-            imports: [ConfigModule],
-            inject: [ConfigService],
-            useFactory: async (configService: ConfigService) => ({
-                secret: configService.get<string>('jwtSecret'),
-                signOptions: { expiresIn: '1d' },
-            }),
-        }),
+        ConfigModule,
+        JwtModule.register({}),
     ],
     controllers: [AuthController],
-    providers: [AuthService],
+    providers: [
+        AuthService,
+        JwtStrategy,
+        JwtRefreshStrategy
+    ],
 })
 export class AuthModule {}
