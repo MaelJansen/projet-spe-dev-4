@@ -15,23 +15,18 @@ import * as bcrypt from 'bcrypt';
 import { RegisterDto, LoginDto } from '../models/auth.dto';
 import {UserEntity} from "../../users/models/user.entity";
 import {ConfigService} from "@nestjs/config";
-
-const SALT_ROUNDS = 10;
+import {UsersService} from "../../users/services/users.service";
+import {SALT_ROUNDS} from "../../common/utils";
 
 @Injectable()
 export class AuthService {
   private readonly jwtSecret: string;
   constructor(
-    @InjectRepository(UserEntity)
-    private usersRepository: Repository<UserEntity>,
+      private usersService: UsersService,
     private jwtService: JwtService,
     private configService: ConfigService,
   ) {
     this.jwtSecret = this.configService.get<string>('JWT_SECRET')!;
-  }
-
-  async getUserByEmail(email: string) {
-    return await this.usersRepository.findOne({ where: { email } });
   }
 
   async generateTokens(userId: string, email: string, role: string, displayName: string) {
@@ -54,31 +49,22 @@ export class AuthService {
     };
   }
 
-  async updateRefreshTokenHash(userId: string, refreshToken: string) {
-    const hash = await bcrypt.hash(refreshToken, SALT_ROUNDS);
-    await this.usersRepository.update(userId, {
-      hashedRefreshToken: hash,
-    });
-  }
-
   async register(registerDto: RegisterDto) {
-    const existingUser = await this.getUserByEmail(registerDto.email);
+    const existingUser = await this.usersService.findByEmail(registerDto.email);
     if (existingUser) {
       throw new ConflictException('User already exists');
     }
 
     const passwordHash = await bcrypt.hash(registerDto.password, SALT_ROUNDS);
 
-    const newUser = this.usersRepository.create({
+    return await this.usersService.createUser({
       ...registerDto,
       password: passwordHash
     });
-    
-    return await this.usersRepository.save(newUser);
   }
 
   async login(loginDto: LoginDto) {
-    const user = await this.getUserByEmail(loginDto.email);
+    const user = await this.usersService.findByEmail(loginDto.email);
 
     if (!user || user.isBlocked) {
       throw new UnauthorizedException('Invalid Credentials');
@@ -102,17 +88,18 @@ export class AuthService {
     }
 
     const tokens = await this.generateTokens(user.id, user.email, user.role, user.name + ' ' + user.lastName);
-    await this.updateRefreshTokenHash(user.id, tokens.refreshToken);
+    const hash = await bcrypt.hash(tokens.refreshToken, SALT_ROUNDS);
+    await this.usersService.updateRefreshToken(user.id, hash);
 
     return tokens;
   }
 
   async logout(userId: string) {
-    await this.usersRepository.update(userId, { hashedRefreshToken: null });
+    await this.usersService.updateRefreshToken(userId, null);
   }
 
   async refreshTokens(userId: string, refreshToken: string) {
-    const user = await this.usersRepository.findOne({ where: { id: userId } });
+    const user = await this.usersService.findById(userId);
     if (!user || !user.hashedRefreshToken || user.isBlocked) {
       throw new ForbiddenException('Access denied');
     }
@@ -123,7 +110,9 @@ export class AuthService {
     }
 
     const tokens = await this.generateTokens(user.id, user.email, user.role, user.name + ' ' + user.lastName);
-    await this.updateRefreshTokenHash(user.id, tokens.refreshToken);
+
+    const hash = await bcrypt.hash(tokens.refreshToken, SALT_ROUNDS);
+    await this.usersService.updateRefreshToken(user.id, hash);
 
     return tokens;
   }
@@ -141,19 +130,13 @@ export class AuthService {
       secret
     });
 
-    await this.usersRepository.update(user.id, {
-      twoFactorAuthenticationSecret: secret,
-    });
+    await this.usersService.updateTwoFactorSecret(user.id, secret);
 
-    const qrCodeDataUrl = await qrcode.toDataURL(otpAuthUrl);
-
-    return {
-      qrCodeDataUrl
-    };
+    return await qrcode.toDataURL(otpAuthUrl);
   }
 
   async turnOnTwoFactorAuthentication(userId: string, code: string) {
-    const user = await this.usersRepository.findOne({ where: { id: userId } });
+    const user = await this.usersService.findById(userId);
 
     if (!user) {
       return 'User not found'
@@ -168,14 +151,12 @@ export class AuthService {
       throw new UnauthorizedException('The 2FA code is incorrect');
     }
 
-    await this.usersRepository.update(userId, {
-      isTwoFactorAuthenticationEnabled: true,
-    });
+    await this.usersService.turnOnTwoFactorAuth(userId);
 
   }
 
   async loginWith2fa(userId: string, code: string) {
-    const user = await this.usersRepository.findOne({ where: { id: userId } });
+    const user = await this.usersService.findById(userId);
     if (!user || user.isBlocked) throw new UnauthorizedException('Access denied');
 
     const result = await verify({
@@ -188,7 +169,9 @@ export class AuthService {
     }
 
     const tokens = await this.generateTokens(user.id, user.email, user.role, user.name + ' ' + user.lastName);
-    await this.updateRefreshTokenHash(user.id, tokens.refreshToken);
+
+    const hash = await bcrypt.hash(tokens.refreshToken, SALT_ROUNDS);
+    await this.usersService.updateRefreshToken(user.id, hash);
 
     return tokens;
   }

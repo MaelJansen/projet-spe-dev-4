@@ -25,6 +25,7 @@ export class UserEntity {
   @Column({ default: false })
   isBlocked: boolean;
 
+  @Exclude()
   @Column({ type: 'varchar', nullable: true })
   hashedRefreshToken?: string | null;
 
